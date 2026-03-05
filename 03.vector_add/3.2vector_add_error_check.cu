@@ -1,7 +1,7 @@
 /*
 ====== 向量加法(基础版) + 错误检测 ======
 总结：
-加入错误检测显得很专业，就和C++在创建头文件之前用： #pragma once  一样。高大上一些。
+在 CUDA 编程中，大量函数来自 NVIDIA 的 CUDA Runtime API，不会抛异常，失败了也不会自动终止程序，只会返回一个错误码，因此加入错误检测会显得很专业。
 
 */
 
@@ -14,7 +14,8 @@
 
 
 // ===================== 错误检测 ==================================
-#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }     // 宏定义，其中FILE是指该.cu脚本，LINE是指该脚本的第x行，类似#define SQR(x) ((x)*(x))，调用SQR(3),运行(3*3)
+
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true){
     if (code != cudaSuccess) {
         fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
@@ -28,7 +29,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 
 
 
-__global__ void vector_add(float* gpu_x, float* gpu_y, float* gpu_z, int N)    // 核函数。
+__global__ void vector_add(float* gpu_x, float* gpu_y, float* gpu_z, int N)    // 核函数
 {
 
 
