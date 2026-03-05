@@ -15,28 +15,32 @@ y     0        1       2   x
 
 */
 
+
+
+
+
 #include <stdio.h>
 #include <cuda.h>
-#include <cuda_runtime.h>   // cudaMalloc、cudaMemcpy、cudaFree
+#include <cuda_runtime.h>     // 涉及cudaMalloc、cudaMemcpy、cudaFree等
 
 
 
-
-__global__ void vector_add(float* gpu_x, float* gpu_y, float* gpu_z, int N)    // 核函数，传入3个指针数组。
+__global__ void vector_add(float* gpu_x, float* gpu_y, float* gpu_z, int N)    // 核函数。
 {
-    // =============二维启用================================
-    int global_idx = blockDim.x * (blockIdx.y * gridDim.x + blockIdx.x) + threadIdx.x;  // 计算每个线程的唯一索引(二维)。
-    // =====================================================
 
 
-    // =============一维启用================================
+    // =========================一维=========================
     //int glabal_idx = blockDim.x * blockIdx.x + threadIdx.x;
-    // =====================================================
+    // ======================================================
 
 
-    if(global_idx < N)   // 因为main函数中设置的线程数量大于数据数量，因此有些线程没被使用就可以不需要调用了。
+    // ======================================二维======================================
+    int global_idx = blockDim.x * (blockIdx.y * gridDim.x + blockIdx.x) + threadIdx.x;    // 计算所有线程的唯一索引。
+    // ================================================================================
+
+    if(global_idx < N)   // global_idx < N是因为main函数中设置的线程数量大于数据数量，防止数组越界。
     {
-        gpu_z[global_idx] = gpu_x[global_idx] + gpu_y[global_idx];    // 进行相加。
+        gpu_z[global_idx] = gpu_x[global_idx] + gpu_y[global_idx];    // gpu_z = gpu_x + gpu_y
     }
 
 }
@@ -44,32 +48,32 @@ __global__ void vector_add(float* gpu_x, float* gpu_y, float* gpu_z, int N)    /
 
 int main()
 {
-    int N = 10000;  // 总共有10000个数。
-    int block_num = 256;   // 假设1个block存在256个线程。
-    
+    int N = 10000;  // 总共有10000个数
+    int blockSize = 256;   // 假设1个block存在256个线程。
+    dim3 block(blockSize);  // 启动核函数可直接用blockSize，但是用上dim3比较规范。
 
 
-    // =============一维启用================================
+    // =======================================一维=======================================
     // 定义一维grid
-    //int grid_num_one = (N + block_num - 1.) / block_num;   // 此处的1.很细节，避免整数除断。
-    // 解析：(N + block_num - 1.) / block_num，其实就是为了定义足够的block，让线程很好地适配数据的数量。
+    // int gridSize_one = (N + blockSize - 1.) / blockSize;   // 此处的1.很细节，避免整数除断。
+    // 解析：(N + blockSize - 1.) / blockSize，其实就是为了定义足够的block，让线程很好地适配数据的数量。
     // 解析：(10000 + 256 - 1.)/256 ≈ 40.05859 向上取整为41，因此需要41个256大小地block。
     // 解析：41*256 = 10496个线程，但是我们只有10000个数据，因此有496个线程是闲置的。
 
-    //dim3 grid_one(grid_num_one);   // 定义一个1维网格，其实也就是定义了grid_num_one个block，再用grid_num_one * block_num就得到总线程数。
-    // =====================================================
+    //dim3 grid_one(gridSize_one);   // 定义一个1维网格，其实也就是定义了gridSize_one个block，再用gridSize_one * blockSize就得到总线程数。
+    // ==================================================================================
 
 
 
-    // =============二维启用====================
+    // =======================================二维=======================================
     // 定义二维grid
-    int grid_num_two = ceil(sqrt((N + block_num - 1.) / block_num));   // 此处的1.很细节，避免整数除断。
-    //解析：sqrt((N + block_num - 1.) / block_num)中多了一个sqrt是因为我们定义的是一个n×n的网格，所以我们要开根号，获得x和y的数量，如上sqrt(40.05859)并向上取整为7。
+    int gridSize_two = ceil(sqrt((N + blockSize - 1.) / blockSize));     // 此处的1.很细节，避免整数除断。
+    //解析：sqrt((N + blockSize - 1.) / blockSize)中多了一个sqrt是因为我们定义的是一个n×n的网格，所以我们要开根号，获得x和y的数量，如上sqrt(40.05859)并向上取整为7。
     // 因此我们定义了一个7×7大小的网格grid，展平成一维就是49个block，总共存在49*256 = 12544个thread，闲置2544个线程，这比一维grid浪费的资源更多。
 
     
-    dim3 grid_two(grid_num_two, grid_num_two);
-    // =========================================
+    dim3 grid_two(gridSize_two, gridSize_two);
+    // ==================================================================================
 
 
     // 定义cpu_x、cpu_y用于cpu端初始化两个一维张量，cpu_z用于存储cpu端的张量和。
@@ -133,13 +137,13 @@ int main()
 
      // =============一维启用================================
     // 启动核函数(一维)。
-    //vector_add<<<grid_one, block_num>>>(gpu_x, gpu_y, gpu_z, N);
+    //vector_add<<<grid_one, block>>>(gpu_x, gpu_y, gpu_z, N);
     // =====================================================
 
 
     // =============二维启用================================
     // 启动核函数(二维)。
-    vector_add<<<grid_two, block_num >>>(gpu_x, gpu_y, gpu_z, N);
+    vector_add<<<grid_two, block >>>(gpu_x, gpu_y, gpu_z, N);
     // =====================================================
 
 
