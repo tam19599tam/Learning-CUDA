@@ -12,6 +12,32 @@
 
 using namespace std;
 
+__device__ void WarpSharedMemReduce(volatile float* shared_memory, int local_block_threadidx)
+{
+    // CUDA不保证所有的shared memory读操作都能在写操作之前完成，因此存在竞争关系，可能导致结果错误
+    // 比如shared_memory[local_block_threadidx] += shared_memory[local_block_threadidx + 16] => shared_memory[0] +=shared_memory[16], shared_memory[16] += shared_memory[32]
+    // 此时上面shared_memory[16]的读和写到底谁在前谁在后，这是不确定的，所以在Volta架构后，最后加入中间寄存器(L11)配合syncwarp和volatile
+    // (使得不会看见其他线程更新shared_memory上的结果)保证读写依赖
+
+    float x = shared_memory[local_block_threadidx];
+    if (blockDim.x >= 64) 
+    {
+      x += shared_memory[local_block_threadidx + 32]; __syncwarp();
+      shared_memory[local_block_threadidx] = x; __syncwarp();
+    }
+
+    x += shared_memory[local_block_threadidx + 16]; __syncwarp();
+    shared_memory[local_block_threadidx] = x; __syncwarp();
+    x += shared_memory[local_block_threadidx + 8]; __syncwarp();
+    shared_memory[local_block_threadidx] = x; __syncwarp();
+    x += shared_memory[local_block_threadidx + 4]; __syncwarp();
+    shared_memory[local_block_threadidx] = x; __syncwarp();
+    x += shared_memory[local_block_threadidx + 2]; __syncwarp();
+    shared_memory[local_block_threadidx] = x; __syncwarp();
+    x += shared_memory[local_block_threadidx + 1]; __syncwarp();
+    shared_memory[local_block_threadidx] = x; __syncwarp();
+}
+
 
 
 template<int blockSize>
@@ -44,11 +70,21 @@ __global__ void reduce_v3(float *gpu_arr, float *gpu_sum, int N)
         __syncthreads();
     }
 
+
+    // 最后一个warp拎出来单独作reduce
+    if (local_block_threadidx < 32) 
+    {
+        WarpSharedMemReduce(shared_memory, local_block_threadidx);
+    }
+
+
     // gridSize个block的reduce sum已得出，保存到gpu_sum中，供后续继续归约使用
     if (local_block_threadidx == 0) 
     {
         gpu_sum[blockIdx.x] = shared_memory[0];
     }
+
+
 }
 
 bool CheckResult(float *cpu_sum, float groundtruth, int gridSize)
