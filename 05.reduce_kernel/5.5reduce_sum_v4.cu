@@ -1,8 +1,11 @@
 // 相较v3而言，v4的改进点主要是由于__syncthreads()开销还是比较大的，所以将for循环中的最后一个warp拎出来，做__syncwarp()。
 
 
+/*
+总结：
+1.最后一个warp在展开时要注意数据是否同步的问题。
 
-
+*/
 
 
 #include <bits/stdc++.h>
@@ -14,28 +17,32 @@ using namespace std;
 
 __device__ void WarpSharedMemReduce(volatile float* shared_memory, int local_block_threadidx)
 {
-    // CUDA不保证所有的shared memory读操作都能在写操作之前完成，因此存在竞争关系，可能导致结果错误
-    // 比如shared_memory[local_block_threadidx] += shared_memory[local_block_threadidx + 16] => shared_memory[0] +=shared_memory[16], shared_memory[16] += shared_memory[32]
-    // 此时上面shared_memory[16]的读和写到底谁在前谁在后，这是不确定的，所以在Volta架构后，最后加入中间寄存器(L11)配合syncwarp和volatile
-    // (使得不会看见其他线程更新shared_memory上的结果)保证读写依赖
-
-    float x = shared_memory[local_block_threadidx];
+    
+    // 这里为什么需要一个中间变量temp作为媒介？不能直接用shared_memory[local_block_threadidx] += shared_memory[local_block_threadidx + 32]…………？
+    // 解释：因为Volta架构引入的独立线程调度导致的，也就是每个线程具有独立的PC和栈S，无法保证每个线程处于同一水平面执行，导致有快有慢，因此用一个中间变量将读和写分开，
+    // 再配合上volatile（告诉编译器shared memory的值随时可能被别的线程改掉；每次用它都要真的去内存里读/写）和__syncwarp();（让 warp 内线程执行同步），保证了结果的准确性。
+    float temp = shared_memory[local_block_threadidx];
     if (blockDim.x >= 64) 
     {
-      x += shared_memory[local_block_threadidx + 32]; __syncwarp();
-      shared_memory[local_block_threadidx] = x; __syncwarp();
+      temp += shared_memory[local_block_threadidx + 32]; __syncwarp();
+      shared_memory[local_block_threadidx] = temp; __syncwarp();
     }
 
-    x += shared_memory[local_block_threadidx + 16]; __syncwarp();
-    shared_memory[local_block_threadidx] = x; __syncwarp();
-    x += shared_memory[local_block_threadidx + 8]; __syncwarp();
-    shared_memory[local_block_threadidx] = x; __syncwarp();
-    x += shared_memory[local_block_threadidx + 4]; __syncwarp();
-    shared_memory[local_block_threadidx] = x; __syncwarp();
-    x += shared_memory[local_block_threadidx + 2]; __syncwarp();
-    shared_memory[local_block_threadidx] = x; __syncwarp();
-    x += shared_memory[local_block_threadidx + 1]; __syncwarp();
-    shared_memory[local_block_threadidx] = x; __syncwarp();
+    // 这里是因为在同一个warp内，所以不必添加判断语句
+    temp += shared_memory[local_block_threadidx + 16]; __syncwarp();
+    shared_memory[local_block_threadidx] = temp; __syncwarp();
+
+    temp += shared_memory[local_block_threadidx + 8]; __syncwarp();
+    shared_memory[local_block_threadidx] = temp; __syncwarp();
+
+    temp += shared_memory[local_block_threadidx + 4]; __syncwarp();
+    shared_memory[local_block_threadidx] = temp; __syncwarp();
+
+    temp += shared_memory[local_block_threadidx + 2]; __syncwarp();
+    shared_memory[local_block_threadidx] = temp; __syncwarp();
+
+    temp += shared_memory[local_block_threadidx + 1]; __syncwarp();
+    shared_memory[local_block_threadidx] = temp; __syncwarp();
 }
 
 
