@@ -1,4 +1,4 @@
-
+// 相较v4而言，v5的改进点主要是将for循环完全展开，以减去for循环中的加法指令，以及给编译器更多重排指令的空间
 
 
 
@@ -8,6 +8,7 @@
 #include <cmath>
 
 using namespace std;
+
 
 __device__ void WarpSharedMemReduce(volatile float* shared_memory, int local_block_threadidx)
 {
@@ -23,21 +24,84 @@ __device__ void WarpSharedMemReduce(volatile float* shared_memory, int local_blo
     }
 
     // 这里是因为在同一个warp内，所以不必添加判断语句
-    temp += shared_memory[local_block_threadidx + 16]; __syncwarp();
-    shared_memory[local_block_threadidx] = temp; __syncwarp();
+    if(local_block_threadidx < 16)
+    {
+        temp += shared_memory[local_block_threadidx + 16]; __syncwarp();
+        shared_memory[local_block_threadidx] = temp; __syncwarp();
+    }
 
-    temp += shared_memory[local_block_threadidx + 8]; __syncwarp();
-    shared_memory[local_block_threadidx] = temp; __syncwarp();
+    if(local_block_threadidx < 8)
+    {
+        temp += shared_memory[local_block_threadidx + 8]; __syncwarp();
+        shared_memory[local_block_threadidx] = temp; __syncwarp();
+    }
 
-    temp += shared_memory[local_block_threadidx + 4]; __syncwarp();
-    shared_memory[local_block_threadidx] = temp; __syncwarp();
+    if(local_block_threadidx < 4)
+    {
+        temp += shared_memory[local_block_threadidx + 4]; __syncwarp();
+        shared_memory[local_block_threadidx] = temp; __syncwarp();
+    }
 
-    temp += shared_memory[local_block_threadidx + 2]; __syncwarp();
-    shared_memory[local_block_threadidx] = temp; __syncwarp();
+    if(local_block_threadidx < 2)
+    {
+        temp += shared_memory[local_block_threadidx + 2]; __syncwarp();
+        shared_memory[local_block_threadidx] = temp; __syncwarp();
+    }
 
-    temp += shared_memory[local_block_threadidx + 1]; __syncwarp();
-    shared_memory[local_block_threadidx] = temp; __syncwarp();
+    if(local_block_threadidx < 1)
+    {
+        temp += shared_memory[local_block_threadidx + 1]; __syncwarp();
+        shared_memory[local_block_threadidx] = temp; __syncwarp();
+    }
+
 }
+
+
+
+template <int blockSize>
+__device__ void BlockSharedMemReduce(float* shared_memory, int local_block_threadidx) 
+{
+    //对v4 L45的for循环展开，以减去for循环中的加法指令，以及给编译器更多重排指令的空间
+    if (blockSize >= 1024)
+    {
+        if (local_block_threadidx < 512) 
+        {
+          shared_memory[local_block_threadidx] += shared_memory[local_block_threadidx + 512];
+        }
+        __syncthreads();
+    }
+
+    if (blockSize >= 512) 
+    {
+        if (local_block_threadidx < 256) 
+        {
+          shared_memory[local_block_threadidx] += shared_memory[local_block_threadidx + 256];
+        }
+        __syncthreads();
+    }
+    if (blockSize >= 256) 
+    {
+        if (local_block_threadidx < 128) 
+        {
+          shared_memory[local_block_threadidx] += shared_memory[local_block_threadidx + 128];
+        }
+        __syncthreads();
+    }
+    if (blockSize >= 128) 
+    {
+        if (local_block_threadidx < 64) 
+        {
+          shared_memory[local_block_threadidx] += shared_memory[local_block_threadidx + 64];
+        }
+        __syncthreads();
+    }
+    // the final warp
+    if (local_block_threadidx < 32) 
+    {
+        WarpSharedMemReduce(shared_memory, local_block_threadidx);
+    }
+}
+
 
 
 
@@ -61,24 +125,11 @@ __global__ void reduce_v5(float *gpu_arr, float *gpu_sum, int N)
     // 执行到此处后，数据量从N到了N/2
     
     
-    // 相较v3，此处循环执行到最后32个线程即可结束
-    for (unsigned int index = blockDim.x / 2; index > 32; index >>= 1) 
-    {
-        if (local_block_threadidx < index) 
-        {
-            shared_memory[local_block_threadidx] += shared_memory[local_block_threadidx + index];
-        }
-        __syncthreads();
-    }
+    // 相较v4，将此处for循环完整展开并且最后一个warp依然被拎出来单独作reduce
+    BlockSharedMemReduce<blockSize>(shared_memory, local_block_threadidx);
 
 
-    // 最后一个warp拎出来单独作reduce
-    if (local_block_threadidx < 32) 
-    {
-        WarpSharedMemReduce(shared_memory, local_block_threadidx);
-    }
-
-
+    
     // gridSize个block的reduce sum已得出，保存到gpu_sum中，供后续继续归约使用
     if (local_block_threadidx == 0) 
     {
@@ -124,7 +175,8 @@ int main()
     float *cpu_sum = (float*)malloc((gridSize) * sizeof(float));
 
     // host端数据初始化
-    for(int i = 0; i < N; i++){
+    for(int i = 0; i < N; i++)
+    {
         cpu_arr[i] = 1.0f;
     }
 
@@ -185,7 +237,7 @@ int main()
             cout << "res per block :" << cpu_sum[i] << endl;
         }
     }
-    cout << "reduce_v3 latency :" << milliseconds << endl;
+    cout << "reduce_v5 latency :" << milliseconds << endl;
 
     // 释放资源
     cudaFree(gpu_arr);
