@@ -22,7 +22,7 @@ __device__ void WarpSharedMemReduce(volatile float* shared_memory, int local_blo
     // 解释：因为Volta架构引入的独立线程调度导致的，也就是每个线程具有独立的PC和栈S，无法保证每个线程处于同一水平面执行，导致有快有慢，因此用一个中间变量将读和写分开，
     // 再配合上volatile（告诉编译器shared memory的值随时可能被别的线程改掉；每次用它都要真的去内存里读/写）和__syncwarp();（让 warp 内线程执行同步），保证了结果的准确性。
     float temp = shared_memory[local_block_threadidx];
-    if (blockDim.x >= 64) 
+    if (blockDim.x >= 64)   // 进入前正好有64个有效值
     {
       temp += shared_memory[local_block_threadidx + 32]; __syncwarp();
       shared_memory[local_block_threadidx] = temp; __syncwarp();
