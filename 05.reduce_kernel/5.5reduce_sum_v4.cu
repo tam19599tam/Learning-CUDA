@@ -48,7 +48,7 @@ __device__ void WarpSharedMemReduce(volatile float* shared_memory, int local_blo
 
 
 template<int blockSize>
-__global__ void reduce_v3(float *gpu_arr, float *gpu_sum, int N)
+__global__ void reduce_v4(float *gpu_arr, float *gpu_sum, int N)
 {
   
     __shared__ float shared_memory[blockSize];   // 注意：kernel内部的blockSize并非外部的blockSize值，因为外部在启动kernel时用的是blockSize/2
@@ -158,7 +158,7 @@ int main()
     cudaEventRecord(start);
 
     // 启动模板kernel函数，blockSize / 2表示只用一半，原来是256，现在只用128
-    reduce_v3<blockSize / 2><<<grid,block>>>(gpu_arr, gpu_sum, N);
+    reduce_v4<blockSize / 2><<<grid,block>>>(gpu_arr, gpu_sum, N);
 
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
