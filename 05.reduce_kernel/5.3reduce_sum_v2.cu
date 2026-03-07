@@ -170,7 +170,7 @@ int main()
 // 启动核函数
     for (int i = 0; i < iterations; i++)    // 执行100次，为了计算更精确的时间
     {
-        sum<<<grid, block>>>(gpu_arr, gpu_sum, N); 
+        reduce_v2<<<grid, block>>>(gpu_arr, gpu_sum, N); 
     }  
 
 
