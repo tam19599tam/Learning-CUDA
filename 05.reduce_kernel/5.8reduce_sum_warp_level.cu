@@ -7,6 +7,8 @@
 
 warp层面相比block层面需要拆分成两次归约，第一次是warp内部归约，第二次是拆分的多个warp归约。
 
+⚠重点区别：block 层面的线程间通信，通常靠 shared memory + 同步
+            warp 层面的线程间通信，通常靠 shuffle 在寄存器值之间直接交换
 */
 
 
